@@ -1,0 +1,32 @@
+
+# LangChain and LCEL (Runnable pipelines)
+langchain
+langchain-core
+
+# Google Gemini models
+langchain-google-genai
+
+# Multi-agent orchestration and ReAct agents
+langgraph
+
+# Tavily search tool
+tavily-python
+langchain-tavily
+
+# Beautiful Soup web scraping
+beautifulsoup4
+requests
+httpx
+lxml
+
+# Environment variables and configuration
+python-dotenv
+pydantic
+pydantic-settings
+
+# Logging, tracing and debugging
+langsmith
+
+# Optional: Web interface and testing
+streamlit
+pytest
