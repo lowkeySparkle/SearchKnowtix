@@ -55,15 +55,23 @@ RUN_CLS = {"complete": "ok", "partial": "warn", "failed": "bad"}
 # Styling: all colors come from CSS variables, swapped by theme
 # --------------------------------------------------------------------------
 
+
+def zigzag(color, opacity):
+    """Faint diagonal zigzag line texture as an inline SVG data URI (no external asset)."""
+    paths = "".join(f"<path d='M0 {30 + dy} L40 {6 + dy} L120 {30 + dy}'/>" for dy in (-28, -14, 0))
+    svg = (f"<svg xmlns='http://www.w3.org/2000/svg' width='120' height='14'>"
+           f"<g fill='none' stroke='{color}' stroke-opacity='{opacity}' stroke-width='1'>{paths}</g></svg>")
+    return 'url("data:image/svg+xml,' + svg.replace("<", "%3C").replace(">", "%3E") + '")'
+
 THEMES = {
     "dark": dict(bg="#080B0E", side="#090D11", card="#0D1217", elev="#111820", accent="#C4F06A",
                  accent_hover="#D4FF80", accent_text="#C4F06A", on_accent="#080B0E", text="#F5F0E6",
                  text2="#A7B1BF", muted="#778393", border="#26313B", coral="#F07855",
-                 ok="#C4F06A", scheme="dark"),
+                 ok="#C4F06A", scheme="dark", pattern=zigzag("white", "0.07")),
     "light": dict(bg="#F5F0E6", side="#EFE9DA", card="#FBF8F1", elev="#EAE4D4", accent="#C4F06A",
                   accent_hover="#B4E050", accent_text="#4B6A0C", on_accent="#151A1F", text="#151A1F",
                   text2="#3F4A57", muted="#667180", border="#D3CCBA", coral="#D9623F",
-                  ok="#4B6A0C", scheme="light"),
+                  ok="#4B6A0C", scheme="light", pattern=zigzag("black", "0.07")),
 }
 
 
@@ -77,7 +85,8 @@ CSS = """
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,500;0,600;1,500;1,600&display=swap');
 html,body,.stApp,.stApp p,.stApp li,.stApp label,.stApp button,.stApp input,.stApp textarea,.stApp a,
 section[data-testid="stSidebar"]{font-family:'Inter',-apple-system,'Segoe UI',sans-serif;}
-.stApp{background:var(--bg);color:var(--text);color-scheme:var(--scheme);}
+.stApp{background-color:var(--bg);background-image:var(--pattern);background-attachment:fixed;
+  color:var(--text);color-scheme:var(--scheme);}
 .stApp p,.stApp li,.stApp label,.stApp span,.stApp h1,.stApp h2,.stApp h3,.stApp h4{color:var(--text);}
 .stApp [data-testid="stCaptionContainer"],.stApp [data-testid="stCaptionContainer"] *{color:var(--muted);}
 header[data-testid="stHeader"]{background:transparent;}
