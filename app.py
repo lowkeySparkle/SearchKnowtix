@@ -1,4 +1,8 @@
-"""SearchKnowtix - Streamlit front end for the multi-agent research pipeline."""
+"""SearchKnowtix - Streamlit front end for the multi-agent research pipeline (jet-black editorial redesign).
+
+Backend contract is unchanged: `pipeline.research_pipeline(topic, progress_callback=..., state=...)`.
+Requires Streamlit >= 1.40 (keyed containers, Material icons in labels, form borders).
+"""
 
 import html
 import os
@@ -10,178 +14,198 @@ from urllib.parse import urlparse
 
 import streamlit as st
 
-st.set_page_config(
-    page_title="SearchKnowtix",
-    page_icon="💭",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
+st.set_page_config(page_title="SearchKnowtix", page_icon="✦", layout="wide",
+                   initial_sidebar_state="expanded")
 
 esc = html.escape
 
-EXAMPLE_TOPICS = [
-    "Compare leading AI models and their capabilities.",
-    "Research advances in renewable energy.",
-    "Investigate the latest cybersecurity trends.",
-    "Analyze developments in robotics.",
+# Topic shortcuts and quick actions fill the composer; nothing runs until the user presses Search.
+TOPICS = [
+    ("AI security", "Risks, regulation & defense", ":material/shield:",
+     "Analyze the main risks, regulations and defensive practices in AI security today."),
+    ("Renewable energy", "Trends, tech & policy", ":material/eco:",
+     "Research recent advances, technology trends and policy developments in renewable energy."),
+    ("Market trends", "Industries, data & forecasts", ":material/trending_up:",
+     "Investigate current market trends across major industries, with data and forecasts."),
+    ("Scientific discoveries", "Research, papers & breakthroughs", ":material/science:",
+     "Summarize the most significant recent scientific discoveries and the research behind them."),
 ]
-
+ACTIONS = [
+    ("Read a structured report", "Get a well-organized, cited report", ":material/description:",
+     "Write a well-structured, cited report on: "),
+    ("Compare AI models", "Side-by-side analysis with sources", ":material/compare_arrows:",
+     "Compare leading AI models and their capabilities, side by side, with sources."),
+    ("Critique a paper or claim", "Get a balanced, evidence-based review", ":material/fact_check:",
+     "Give a balanced, evidence-based critique of this paper or claim: "),
+    ("Explore a topic", "Dive deeper with multi-agent research", ":material/explore:",
+     "Explore in depth, with multiple perspectives: "),
+]
 STAGES = [
-    ("search", "Search Agent", "Queries the web with Tavily for your topic."),
-    ("reader", "Reader Agent", "Scrapes up to two result pages with BeautifulSoup."),
-    ("writer", "Writer Agent", "Drafts the report from the collected research."),
-    ("critic", "Critic Agent", "Reviews the report for support, clarity and gaps."),
+    ("search", "Searching the web"),
+    ("reader", "Reading and extracting sources"),
+    ("writer", "Writing the structured report"),
+    ("critic", "Reviewing with the critic"),
 ]
+STATUS_LABEL = {"pending": "Waiting", "running": "Working", "done": "Complete",
+                "warn": "Attention", "failed": "Failed", "notrun": "Not run"}
+RUN_LABEL = {"complete": "Completed", "partial": "Completed with issues", "failed": "Failed"}
+RUN_CLS = {"complete": "ok", "partial": "warn", "failed": "bad"}
 
-STATUS_LABEL = {
-    "pending": "Waiting",
-    "running": "Working",
-    "done": "Complete",
-    "warn": "Attention",
-    "failed": "Failed",
-    "notrun": "Not run",
+# --------------------------------------------------------------------------
+# Styling: all colors come from CSS variables, swapped by theme
+# --------------------------------------------------------------------------
+
+THEMES = {
+    "dark": dict(bg="#080B0E", side="#090D11", card="#0D1217", elev="#111820", accent="#C4F06A",
+                 accent_hover="#D4FF80", accent_text="#C4F06A", on_accent="#080B0E", text="#F5F0E6",
+                 text2="#A7B1BF", muted="#778393", border="#26313B", coral="#F07855",
+                 ok="#C4F06A", scheme="dark"),
+    "light": dict(bg="#F5F0E6", side="#EFE9DA", card="#FBF8F1", elev="#EAE4D4", accent="#C4F06A",
+                  accent_hover="#B4E050", accent_text="#4B6A0C", on_accent="#151A1F", text="#151A1F",
+                  text2="#3F4A57", muted="#667180", border="#D3CCBA", coral="#D9623F",
+                  ok="#4B6A0C", scheme="light"),
 }
 
-# --------------------------------------------------------------------------
-# Styling
-# --------------------------------------------------------------------------
+
+def theme_css(mode):
+    t = THEMES[mode]
+    return "<style>:root{" + "".join(f"--{k.replace('_', '-')}:{v};" for k, v in t.items()) + "}</style>"
+
 
 CSS = """
 <style>
-@import url('https://api.fontshare.com/v2/css?f[]=satoshi@300,400,500,700,900&display=swap');
-.stApp, .stApp p, .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp label, .stApp button,
-.stApp textarea, .stApp input, .stApp li, .stApp a, section[data-testid="stSidebar"]{
-  font-family:'Satoshi',-apple-system,'Segoe UI',sans-serif;}
-:root{
-  --rr-bg:#04254E; --rr-surface:#07305F; --rr-surface2:#052B57;
-  --rr-border:rgba(148,163,200,.16); --rr-text:#e6edf7; --rr-muted:#93a1bd;
-  --rr-cyan:#8AD5EB; --rr-blue:#5954A4; --rr-violet:#8A54A2;
-  --rr-green:#34d399; --rr-amber:#fbbf24; --rr-red:#f87171;
-}
-.stApp{background:
-  radial-gradient(1100px 520px at 85% -8%, rgba(138,84,162,.13), transparent 60%),
-  radial-gradient(900px 480px at -5% 0%, rgba(138,213,235,.10), transparent 55%),
-  var(--rr-bg);}
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,500;0,600;1,500;1,600&display=swap');
+html,body,.stApp,.stApp p,.stApp li,.stApp label,.stApp button,.stApp input,.stApp textarea,.stApp a,
+section[data-testid="stSidebar"]{font-family:'Inter',-apple-system,'Segoe UI',sans-serif;}
+.stApp{background:var(--bg);color:var(--text);color-scheme:var(--scheme);}
+.stApp p,.stApp li,.stApp label,.stApp span,.stApp h1,.stApp h2,.stApp h3,.stApp h4{color:var(--text);}
+.stApp [data-testid="stCaptionContainer"],.stApp [data-testid="stCaptionContainer"] *{color:var(--muted);}
 header[data-testid="stHeader"]{background:transparent;}
-.block-container{padding-top:2.2rem;max-width:1280px;}
-h1,h2,h3,h4{letter-spacing:-.01em;}
-section[data-testid="stSidebar"]{background:#031d3d;border-right:1px solid var(--rr-border);}
+.block-container{padding-top:1.2rem;max-width:1240px;}
+section[data-testid="stSidebar"]{background:var(--side);border-right:1px solid var(--border);}
 section[data-testid="stSidebar"] .block-container{padding-top:1.2rem;}
+:focus-visible{outline:2px solid var(--accent-text);outline-offset:2px;}
 
-.rr-brand{display:flex;align-items:center;gap:.7rem;margin-bottom:.4rem;}
-.rr-brand .name{font-weight:700;font-size:1.15rem;line-height:1.1;}
-.rr-brand .sub{font-size:.72rem;color:var(--rr-muted);letter-spacing:.08em;text-transform:uppercase;}
-.rr-side-h{font-size:.7rem;color:var(--rr-muted);letter-spacing:.12em;text-transform:uppercase;margin:1.1rem 0 .4rem;}
-.rr-flow{list-style:none;margin:0;padding:0;}
-.rr-flow li{display:flex;gap:.6rem;padding:.35rem 0;font-size:.84rem;color:#c5d0e6;}
-.rr-flow .n{flex:0 0 1.35rem;height:1.35rem;border-radius:50%;border:1px solid var(--rr-border);
-  font-size:.68rem;display:flex;align-items:center;justify-content:center;color:var(--rr-cyan);}
-.rr-side-note{font-size:.76rem;color:var(--rr-muted);line-height:1.45;}
-.rr-run-ind{border:1px solid var(--rr-border);border-radius:12px;padding:.6rem .8rem;background:var(--rr-surface2);
-  font-size:.82rem;color:#c5d0e6;}
-.rr-dot{display:inline-block;width:.55rem;height:.55rem;border-radius:50%;margin-right:.45rem;background:#52607d;}
-.rr-dot.run{background:var(--rr-cyan);box-shadow:0 0 0 0 rgba(138,213,235,.6);animation:rrpulse 1.6s infinite;}
-.rr-dot.ok{background:var(--rr-green);} .rr-dot.warn{background:var(--rr-amber);} .rr-dot.bad{background:var(--rr-red);}
-@keyframes rrpulse{70%{box-shadow:0 0 0 7px rgba(138,213,235,0);}100%{box-shadow:0 0 0 0 rgba(138,213,235,0);}}
+/* brand + labels */
+.sk-brand{display:flex;align-items:center;gap:.7rem;margin-bottom:1rem;}
+.sk-brand .name{font-weight:650;font-size:1.12rem;line-height:1.1;}
+.sk-brand .sub{font-size:.62rem;color:var(--muted);letter-spacing:.2em;text-transform:uppercase;margin-top:.2rem;}
+.sk-label{font-size:.68rem;letter-spacing:.2em;text-transform:uppercase;color:var(--muted);margin:1.4rem 0 .6rem;}
+.sk-label.accent{color:var(--accent-text);margin-top:.2rem;}
+.sk-rule{border:0;border-top:1px solid var(--border);margin:1.6rem 0 0;}
+.sk-statement{font-family:'Playfair Display',Georgia,serif;font-size:1rem;line-height:1.35;color:var(--text2);margin-top:1.4rem;}
+.sk-statement:before{content:"✦ ";color:var(--accent-text);}
 
-.rr-hero{padding:.4rem 0 1.1rem;}
-.rr-hero .eyebrow{font-size:.74rem;letter-spacing:.16em;text-transform:uppercase;color:var(--rr-cyan);}
-.rr-hero h1{font-size:2.6rem;margin:.15rem 0 .1rem;font-weight:750;
-  background:linear-gradient(92deg,#e6edf7 10%,#8AD5EB 55%,#8A54A2 100%);-webkit-background-clip:text;
-  background-clip:text;color:transparent;}
-.rr-hero .tag{font-size:1.05rem;color:#c5d0e6;margin-bottom:.35rem;}
-.rr-hero .desc{max-width:60rem;color:var(--rr-muted);font-size:.95rem;line-height:1.55;}
+/* hero */
+.sk-hero h1{font-family:'Playfair Display',Georgia,serif;font-weight:500;font-size:clamp(2.3rem,5vw,3.6rem);
+  line-height:1.05;letter-spacing:-.015em;margin:.3rem 0 .9rem;padding:0;}
+.sk-hero h1 em{font-style:italic;}
+.sk-hero p{max-width:40rem;color:var(--text2);font-size:.98rem;line-height:1.6;margin:0 0 1.2rem;}
 
-.rr-h2{font-size:.78rem;letter-spacing:.14em;text-transform:uppercase;color:var(--rr-muted);margin:1.4rem 0 .6rem;}
+/* composer: one unified component */
+[data-testid="stForm"]{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:.45rem;}
+[data-testid="stForm"]:focus-within{border-color:var(--accent-text);}
+[data-testid="stForm"] [data-testid="stTextInputRootElement"],
+[data-testid="stForm"] [data-baseweb="input"],[data-testid="stForm"] [data-baseweb="base-input"]{
+  background:transparent;border:0;box-shadow:none;}
+[data-testid="stForm"] input{background:transparent;color:var(--text);font-size:1.02rem;padding:.8rem .5rem;}
+[data-testid="stForm"] input::placeholder{color:var(--muted);opacity:1;}
+[data-testid="stForm"] button{background:var(--accent);color:var(--on-accent);border:0;border-radius:9px;
+  font-weight:650;min-height:3rem;transition:background .15s;}
+[data-testid="stForm"] button p{color:var(--on-accent);}
+[data-testid="stForm"] button:hover{background:var(--accent-hover);color:var(--on-accent);}
+[data-testid="stForm"] button:disabled{opacity:.5;}
 
-.rr-stage{position:relative;background:linear-gradient(180deg,var(--rr-surface),var(--rr-surface2));
-  border:1px solid var(--rr-border);border-radius:16px;padding:1rem 1rem .9rem;min-height:15.5rem;
-  transition:border-color .25s, box-shadow .25s;}
-.rr-stage::before{content:"";position:absolute;left:0;right:0;top:0;height:2px;background:#1d4a78;}
-.rr-stage.rr-running{border-color:rgba(138,213,235,.55);box-shadow:0 0 0 1px rgba(138,213,235,.18),0 8px 30px rgba(138,213,235,.08);}
-.rr-stage.rr-running::before{background:linear-gradient(90deg,var(--rr-cyan),var(--rr-violet));}
-.rr-stage.rr-done::before{background:var(--rr-green);}
-.rr-stage.rr-warn::before{background:var(--rr-amber);}
-.rr-stage.rr-failed::before{background:var(--rr-red);}
-.rr-stage.rr-next::after{content:"";position:absolute;right:-1.05rem;top:2.1rem;width:1rem;height:2px;
-  background:linear-gradient(90deg,var(--rr-cyan),var(--rr-violet));opacity:.5;}
-@media (max-width:640px){.rr-stage.rr-next::after{display:none;}.rr-stage{min-height:0;}}
-.rr-stage .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:.15rem;}
-.rr-stage .idx{font-size:.7rem;color:var(--rr-muted);letter-spacing:.12em;}
-.rr-stage .nm{font-weight:650;font-size:1.02rem;margin:.1rem 0 .1rem;}
-.rr-stage .pp{font-size:.8rem;color:var(--rr-muted);margin-bottom:.6rem;line-height:1.4;}
-.rr-stage .k{font-size:.66rem;letter-spacing:.1em;text-transform:uppercase;color:var(--rr-muted);margin-top:.5rem;}
-.rr-stage .v{font-size:.84rem;color:#d6dff0;line-height:1.4;word-break:break-word;}
-.rr-stage .row{font-size:.8rem;color:#c5d0e6;padding:.18rem 0;word-break:break-all;}
-.rr-stage .row .s{color:var(--rr-muted);}
-.rr-stage .prev{font-size:.78rem;color:#9fb0cf;border-left:2px solid var(--rr-border);padding-left:.6rem;margin-top:.4rem;line-height:1.45;}
+/* card-style buttons (topics, recent rows, quick actions) */
+.st-key-topics button,.st-key-recent button,.st-key-quick button{
+  background:var(--card);border:1px solid var(--border);border-radius:10px;color:var(--text);
+  text-align:left;justify-content:flex-start;padding:.8rem .95rem;height:auto;width:100%;
+  transition:border-color .15s,background .15s;}
+.st-key-topics button p,.st-key-recent button p,.st-key-quick button p{
+  text-align:left;white-space:pre-line;font-size:.8rem;line-height:1.45;color:var(--muted);}
+.st-key-topics button p strong,.st-key-recent button p strong,.st-key-quick button p strong{
+  color:var(--text);font-size:.92rem;font-weight:600;}
+.st-key-topics button:hover,.st-key-recent button:hover,.st-key-quick button:hover{
+  border-color:var(--accent-text);background:var(--elev);color:var(--text);}
+.st-key-topics button span[data-testid="stIconMaterial"]{color:var(--accent-text);}
+.st-key-recent button{border-radius:0;border:0;border-bottom:1px solid var(--border);background:transparent;}
+.st-key-quickcol{border-left:1px solid var(--border);padding-left:1.2rem;}
 
-.rr-pill{font-size:.68rem;padding:.16rem .55rem;border-radius:999px;border:1px solid var(--rr-border);color:#c5d0e6;white-space:nowrap;}
-.rr-pill.running{color:var(--rr-cyan);border-color:rgba(138,213,235,.5);}
-.rr-pill.done{color:var(--rr-green);border-color:rgba(52,211,153,.45);}
-.rr-pill.warn{color:var(--rr-amber);border-color:rgba(251,191,36,.45);}
-.rr-pill.failed{color:var(--rr-red);border-color:rgba(248,113,113,.45);}
+/* sidebar buttons */
+section[data-testid="stSidebar"] button{border-radius:9px;justify-content:flex-start;text-align:left;
+  border:1px solid transparent;background:transparent;color:var(--text2);transition:background .15s;}
+section[data-testid="stSidebar"] button p{color:inherit;}
+section[data-testid="stSidebar"] button:hover{background:var(--elev);color:var(--text);}
+section[data-testid="stSidebar"] button[kind="primary"],
+section[data-testid="stSidebar"] button[data-testid="stBaseButton-primary"]{
+  background:var(--elev);border-left:2px solid var(--accent-text);color:var(--accent-text);}
+.st-key-btn_new button{background:var(--accent) !important;color:var(--on-accent) !important;
+  border:0 !important;font-weight:650;justify-content:center;}
+.st-key-btn_new button p{color:var(--on-accent) !important;}
+.st-key-btn_new button:hover{background:var(--accent-hover) !important;}
+.st-key-theme_btn button{background:transparent;border:1px solid var(--border);color:var(--text);border-radius:999px;}
 
-.rr-card{background:linear-gradient(180deg,var(--rr-surface),var(--rr-surface2));border:1px solid var(--rr-border);
-  border-radius:16px;padding:1.1rem 1.25rem;margin-bottom:.8rem;}
-.rr-card .t{font-size:1.35rem;font-weight:680;line-height:1.3;margin:.1rem 0 .2rem;}
-.rr-card .q{color:var(--rr-muted);font-size:.9rem;margin-bottom:.7rem;word-break:break-word;}
-.rr-chips{display:flex;flex-wrap:wrap;gap:.45rem;}
-.rr-chip{font-size:.76rem;padding:.22rem .65rem;border-radius:8px;background:rgba(148,163,200,.08);
-  border:1px solid var(--rr-border);color:#c5d0e6;}
-.rr-chip.ok{color:var(--rr-green);} .rr-chip.warn{color:var(--rr-amber);} .rr-chip.bad{color:var(--rr-red);}
+/* current run + agents */
+.sk-run{border:1px solid var(--border);border-radius:10px;background:var(--card);padding:.7rem .8rem;font-size:.82rem;
+  color:var(--text2);line-height:1.45;}
+.sk-run b{color:var(--text);font-weight:600;}
+.sk-bar{height:3px;background:var(--border);border-radius:2px;margin-top:.5rem;overflow:hidden;}
+.sk-bar i{display:block;height:100%;background:var(--accent-text);transition:width .4s ease;}
+.sk-dot{display:inline-block;width:.5rem;height:.5rem;border-radius:50%;margin-right:.45rem;background:var(--muted);}
+.sk-dot.run{background:var(--accent-text);animation:skp 1.6s infinite;}
+.sk-dot.ok{background:var(--ok);} .sk-dot.warn{background:var(--coral);} .sk-dot.bad{background:var(--coral);}
+@keyframes skp{50%{opacity:.35;}}
+@media (prefers-reduced-motion:reduce){*{animation:none !important;transition:none !important;}}
+.sk-agents{border:1px solid var(--coral);border-radius:10px;padding:.8rem 1rem;margin-top:.8rem;background:var(--card);}
+.sk-agents .t{font-size:.7rem;letter-spacing:.18em;text-transform:uppercase;color:var(--coral);font-weight:600;}
+.sk-agents .s{font-size:.8rem;color:var(--text2);margin-top:.3rem;}
+.sk-tag{font-family:'Playfair Display',Georgia,serif;font-style:italic;font-size:1.05rem;color:var(--text2);margin-top:1.2rem;}
+.sk-tag:after{content:"";display:block;width:2rem;height:2px;background:var(--accent-text);margin-top:.4rem;}
 
-.rr-src{display:flex;gap:.8rem;align-items:flex-start;padding:.7rem .9rem;margin-bottom:.45rem;border-radius:12px;
-  background:var(--rr-surface2);border:1px solid var(--rr-border);}
-.rr-src .num{flex:0 0 1.6rem;color:var(--rr-cyan);font-size:.8rem;padding-top:.1rem;}
-.rr-src a{color:#8AD5EB;text-decoration:none;word-break:break-all;}
-.rr-src a:hover{text-decoration:underline;}
-.rr-src .ti{font-weight:600;color:var(--rr-text);margin-bottom:.1rem;}
-.rr-src .meta{font-size:.76rem;color:var(--rr-muted);margin-top:.15rem;}
+/* timeline */
+.sk-tl{border:1px solid var(--border);border-radius:12px;background:var(--card);padding:.4rem 1rem;margin-bottom:1rem;}
+.sk-tl .r{display:flex;gap:.8rem;align-items:baseline;padding:.6rem 0;border-bottom:1px solid var(--border);}
+.sk-tl .r:last-child{border-bottom:0;}
+.sk-tl .n{flex:1;font-size:.9rem;} .sk-tl .d{font-size:.78rem;color:var(--muted);display:block;margin-top:.15rem;word-break:break-word;}
+.sk-pill{font-size:.68rem;padding:.14rem .55rem;border-radius:999px;border:1px solid var(--border);color:var(--text2);white-space:nowrap;}
+.sk-pill.running,.sk-pill.done{color:var(--accent-text);border-color:var(--accent-text);}
+.sk-pill.warn,.sk-pill.failed{color:var(--coral);border-color:var(--coral);}
 
-.st-key-rr-report{background:var(--rr-surface2);border:1px solid var(--rr-border);border-radius:16px;
-  padding:1.6rem clamp(1rem,3vw,2.6rem);}
-.st-key-rr-report > div{max-width:54rem;margin:0 auto;}
-.st-key-rr-report p, .st-key-rr-report li{font-size:1.02rem;line-height:1.75;color:#dbe4f3;}
-.st-key-rr-report h1,.st-key-rr-report h2,.st-key-rr-report h3{margin-top:1.6rem;}
-.st-key-rr-report a{color:#8AD5EB;}
-.st-key-rr-critic{background:linear-gradient(180deg,rgba(138,84,162,.10),rgba(138,84,162,.03));
-  border:1px solid rgba(138,84,162,.35);border-left:3px solid var(--rr-violet);border-radius:14px;padding:1.1rem 1.4rem;}
+/* result overview */
+.sk-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:1.1rem 1.25rem;margin-bottom:.8rem;}
+.sk-card .t{font-family:'Playfair Display',Georgia,serif;font-size:1.5rem;line-height:1.25;}
+.sk-card .q{color:var(--text2);font-size:.9rem;margin:.2rem 0 .7rem;word-break:break-word;}
+.sk-chips{display:flex;flex-wrap:wrap;gap:.45rem;}
+.sk-chip{font-size:.75rem;padding:.2rem .6rem;border-radius:7px;background:var(--elev);border:1px solid var(--border);color:var(--text2);}
+.sk-chip.ok{color:var(--ok);} .sk-chip.warn,.sk-chip.bad{color:var(--coral);}
+.sk-src{display:flex;gap:.8rem;padding:.7rem .9rem;margin-bottom:.45rem;border-radius:10px;background:var(--card);border:1px solid var(--border);}
+.sk-src .num{flex:0 0 1.6rem;color:var(--accent-text);font-size:.8rem;}
+.sk-src a{color:var(--accent-text);word-break:break-all;}
+.sk-src .ti{font-weight:600;color:var(--text);} .sk-src .meta{font-size:.76rem;color:var(--muted);margin-top:.15rem;}
 
-.stButton>button,.stDownloadButton>button{border-radius:10px;transition:all .2s ease;}
-/* primary buttons: scampi -> vivid purple */
-.stButton>button[kind="primary"],button[data-testid="stBaseButton-primary"]{
-  background:linear-gradient(135deg,#5954A4,#8A54A2);border:1px solid rgba(138,213,235,.35);color:#fff;
-  box-shadow:0 4px 18px rgba(89,84,164,.35);}
-.stButton>button[kind="primary"]:hover,button[data-testid="stBaseButton-primary"]:hover{
-  background:linear-gradient(135deg,#6a64b8,#9c63b5);border-color:#8AD5EB;color:#fff;}
-.stButton>button[kind="primary"]:disabled,button[data-testid="stBaseButton-primary"]:disabled{opacity:.45;box-shadow:none;}
-/* secondary buttons: denim surface, sky blue accents */
-.stButton>button[kind="secondary"],.stDownloadButton>button,
-button[data-testid="stBaseButton-secondary"]{
-  background:rgba(138,213,235,.06);border:1px solid rgba(138,213,235,.28);color:#e6edf7;}
-.stButton>button[kind="secondary"]:hover,.stDownloadButton>button:hover,
-button[data-testid="stBaseButton-secondary"]:hover{
-  background:rgba(138,213,235,.14);border-color:#8AD5EB;color:#8AD5EB;}
-.stButton>button:focus-visible,.stDownloadButton>button:focus-visible{outline:2px solid #8AD5EB;outline-offset:2px;box-shadow:none;}
-/* tabs, inputs, expanders */
-[data-baseweb="tab-highlight"]{background-color:#8AD5EB !important;}
-button[data-baseweb="tab"][aria-selected="true"]{color:#8AD5EB;}
-.stTextArea textarea:focus{border-color:#8AD5EB;box-shadow:0 0 0 1px rgba(138,213,235,.5);}
-[data-testid="stExpander"] details{border-color:rgba(138,213,235,.2);background:rgba(5,43,87,.5);}
-.stTextArea textarea{background:var(--rr-surface2);border:1px solid var(--rr-border);border-radius:12px;font-size:1rem;}
+/* report: warm paper reading surface in both themes */
+.st-key-sk-report{background:#F5F0E6;border:1px solid var(--border);border-radius:12px;padding:1.8rem clamp(1rem,3vw,2.8rem);}
+.st-key-sk-report > div{max-width:46rem;margin:0 auto;}
+.stApp .st-key-sk-report,.stApp .st-key-sk-report *{color:#151A1F;}
+.stApp .st-key-sk-report code,.stApp .st-key-sk-report pre{background:#E9E2D0;}
+.st-key-sk-report p,.st-key-sk-report li{font-size:1.02rem;line-height:1.75;}
+.st-key-sk-report h1,.st-key-sk-report h2,.st-key-sk-report h3{font-family:'Playfair Display',Georgia,serif;margin-top:1.6rem;}
+.stApp .st-key-sk-report a,.stApp .st-key-sk-report a *{color:#2F5D00;text-decoration:underline;}
+.st-key-sk-critic{background:var(--card);border:1px solid var(--border);border-left:3px solid var(--coral);
+  border-radius:10px;padding:1rem 1.3rem;}
+
+/* secondary widgets */
+.stDownloadButton>button{background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:9px;}
+.stDownloadButton>button:hover{border-color:var(--accent-text);color:var(--accent-text);}
+[data-baseweb="tab-highlight"]{background-color:var(--accent-text) !important;}
+button[data-baseweb="tab"][aria-selected="true"]{color:var(--accent-text);}
+[data-testid="stExpander"] details{border-color:var(--border);background:var(--card);}
+.stTextArea textarea{background:var(--card);color:var(--text);border:1px solid var(--border);}
 </style>
 """
 
-LOGO = """
-<svg width="40" height="40" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg" aria-label="SearchKnowtix logo">
-<defs><linearGradient id="rrg" x1="0" y1="0" x2="1" y2="1">
-<stop offset="0" stop-color="#8AD5EB"/><stop offset="1" stop-color="#8A54A2"/></linearGradient></defs>
-<rect x="1" y="1" width="46" height="46" rx="13" fill="#031d3d" stroke="url(#rrg)" stroke-width="1.5"/>
-<path d="M24 8c-4 0-6 3.2-5 6-3.4-.8-6 1.8-4.6 5 2.6-.6 3.6-.2 4.6.2V35l5 4 5-4V19.2c1-.4 2-.8 4.6-.2 1.4-3.2-1.2-5.8-4.6-5 1-2.8-1-6-5-6z" fill="url(#rrg)"/>
-<circle cx="24" cy="22" r="1.6" fill="#031d3d"/>
-</svg>
-"""
+LOGO = ('<svg width="34" height="34" viewBox="0 0 24 24" aria-label="SearchKnowtix"><path d="M12 1C12.6 7.5 16.5 11.4 23 12'
+        'C16.5 12.6 12.6 16.5 12 23C11.4 16.5 7.5 12.6 1 12C7.5 11.4 11.4 7.5 12 1Z" fill="#C4F06A"/></svg>')
 
 # --------------------------------------------------------------------------
 # Small helpers
@@ -204,13 +228,12 @@ def keyed_container(key):
 
 
 def safe_url(url):
-    """Return the URL if it is a plain http(s) URL, else None."""
     try:
         p = urlparse(str(url).strip())
     except Exception:
         return None
-    if p.scheme in ("http", "https") and p.netloc and " " not in url:
-        return url.strip()
+    if p.scheme in ("http", "https") and p.netloc and " " not in str(url).strip():
+        return str(url).strip()
     return None
 
 
@@ -233,10 +256,9 @@ def friendly_error(msg):
     m = (msg or "").lower()
     if "503" in m or "unavailable" in m or "overloaded" in m:
         return ("The model provider is temporarily unavailable (HTTP 503). "
-                "This is usually short-lived: wait a minute and run the research again.")
+                "Wait a minute and run the research again.")
     if "504" in m or "deadline" in m or "timed out" in m or "timeout" in m:
-        return ("The request timed out (HTTP 504 or a timeout). "
-                "Try again shortly, or use a narrower topic.")
+        return "The request timed out. Try again shortly, or use a narrower topic."
     if "429" in m or "quota" in m or "rate limit" in m or "resource_exhausted" in m:
         return "A rate limit or quota was reached. Wait a while before trying again."
     if any(s in m for s in ("api key", "api_key", "401", "403", "permission", "unauthorized")):
@@ -266,62 +288,39 @@ def to_plain_text(md):
     return t
 
 
-# --------------------------------------------------------------------------
-# Backend loading
-# --------------------------------------------------------------------------
-
-
 def load_backend():
     """Import the existing pipeline. Returns (module, error_message)."""
     try:
         import pipeline  # noqa: WPS433 (imports agents.py and tools.py)
         return pipeline, None
-    except Exception as exc:  # missing keys, missing packages, ...
+    except Exception as exc:
         return None, f"{type(exc).__name__}: {str(exc)[:240]}"
 
 
-def backend_config(pipeline_mod):
-    cfg = {}
-    try:
-        import agents
-        cfg["model"] = str(getattr(agents.llm, "model", "") or "unknown")
-    except Exception:
-        cfg["model"] = "unknown"
-    cfg["google_key"] = bool(os.getenv("GOOGLE_API_KEY"))
-    cfg["tavily_key"] = bool(os.getenv("TAVILY_API_KEY"))
-    return cfg
-
-
 # --------------------------------------------------------------------------
-# Stage state (built from real pipeline events)
+# Stage state (built from real pipeline events; unchanged logic)
 # --------------------------------------------------------------------------
 
 
 def new_stages():
-    return {
-        k: {
-            "status": "pending", "detail": "", "url_count": None, "urls": [],
-            "pages": {}, "scraped": None, "attempted": None,
-            "fallback": False, "revision": None, "revision_note": "",
-        }
-        for k, _, _ in STAGES
-    }
+    return {k: {"status": "pending", "detail": "", "url_count": None, "urls": [], "pages": {},
+                "scraped": None, "attempted": None, "fallback": False, "revision": None,
+                "revision_note": ""} for k, _ in STAGES}
 
 
 def apply_event(stages, ev):
     stage, event, msg = ev.get("stage"), ev.get("event"), ev.get("message", "")
     if stage == "revision":
         w = stages["writer"]
-        w["revision"] = {"started": "running", "completed": "done",
-                         "failed": "failed", "skipped": "skipped"}.get(event, w["revision"])
+        w["revision"] = {"started": "running", "completed": "done", "failed": "failed",
+                         "skipped": "skipped"}.get(event, w["revision"])
         w["revision_note"] = msg
         return
     s = stages.get(stage)
     if s is None:
         return
     if event == "started":
-        s["status"] = "running"
-        s["detail"] = msg
+        s["status"], s["detail"] = "running", msg
         if stage == "reader":
             s["urls"] = list(ev.get("urls", []))
             for u in s["urls"]:
@@ -333,13 +332,11 @@ def apply_event(stages, ev):
     elif event == "url_skipped":
         s["pages"][ev.get("url")] = ("skipped", msg)
     elif event == "fallback":
-        s["fallback"] = True
-        s["detail"] = msg
+        s["fallback"], s["detail"] = True, msg
     elif event == "completed":
         s["detail"] = msg
         if stage == "search":
-            s["url_count"] = ev.get("url_count")
-            s["urls"] = list(ev.get("urls", []))
+            s["url_count"], s["urls"] = ev.get("url_count"), list(ev.get("urls", []))
             s["status"] = "warn" if not ev.get("url_count") else "done"
         elif stage == "reader":
             s["scraped"], s["attempted"] = ev.get("scraped"), ev.get("attempted")
@@ -349,143 +346,86 @@ def apply_event(stages, ev):
         else:
             s["status"] = "done"
     elif event == "failed":
-        s["status"] = "failed"
-        s["detail"] = msg
+        s["status"], s["detail"] = "failed", msg
 
 
 def finalize_stages(stages):
-    """Anything that never finished once the run is over did not complete."""
     for s in stages.values():
         if s["status"] == "running":
             s["status"] = "failed"
             s["detail"] = s["detail"] or "Interrupted before finishing."
         elif s["status"] == "pending":
             s["status"] = "notrun"
-    w = stages["writer"]
-    if w["revision"] == "running":
-        w["revision"] = "failed"
+    if stages["writer"]["revision"] == "running":
+        stages["writer"]["revision"] = "failed"
 
 
 def search_urls_from_state(state):
-    text = str((state or {}).get("search_result", ""))
-    found = re.findall(r"(?m)^URL:\s*(\S+)", text)
-    out = []
-    for u in found:
-        if u not in out:
-            out.append(u)
-    return out
+    found = re.findall(r"(?m)^URL:\s*(\S+)", str((state or {}).get("search_result", "")))
+    return list(dict.fromkeys(found))
 
 
-def stage_card_html(idx, key, info, topic, state=None):
-    _, name, purpose = STAGES[idx]
-    state = state or {}
-    status = info["status"]
-    pill = f'<span class="rr-pill {status}">{STATUS_LABEL[status]}</span>'
-    body = []
+def timeline_html(stages):
+    """One row per real pipeline stage, plus the revision pass once it has started."""
+    rows = []
 
-    def kv(k, v):
-        body.append(f'<div class="k">{esc(k)}</div><div class="v">{v}</div>')
+    def row(name, status, detail=""):
+        d = f'<span class="d">{esc(plain_preview(detail, 140))}</span>' if detail else ""
+        rows.append(f'<div class="r"><div class="n">{esc(name)}{d}</div>'
+                    f'<span class="sk-pill {status}">{STATUS_LABEL.get(status, status)}</span></div>')
 
-    if key == "search":
-        kv("Topic", esc(plain_preview(topic, 150)) if topic else "Waiting for a topic")
-        if status == "running":
-            kv("Status", "Searching the web…")
-        elif status in ("done", "warn"):
-            n = info["url_count"]
-            kv("Result URLs", "None detected" if not n else f"{n} detected")
-        elif status == "failed":
-            kv("Problem", esc(friendly_error(info["detail"])))
-        urls = search_urls_from_state(state) or info["urls"]
-        for u in urls[:4]:
-            body.append(f'<div class="row">{esc(short_url(u, 48))}</div>')
-        if len(urls) > 4:
-            body.append(f'<div class="row s">+ {len(urls) - 4} more</div>')
-
-    elif key == "reader":
-        body.append('<div class="k">Scope</div><div class="v">The backend reads at most 2 URLs.</div>')
-        glyph = {"queued": "·", "reading": "…", "read": "✓", "skipped": "✕"}
-        for u, (st_, why) in info["pages"].items():
-            label = {"queued": "queued", "reading": "reading", "read": "read", "skipped": "skipped"}[st_]
-            body.append(f'<div class="row">{glyph[st_]} {esc(short_url(u, 44))} <span class="s">— {label}</span></div>')
-        if info["scraped"] is not None:
-            kv("Pages read", f'{info["scraped"]} of {info["attempted"]}')
-        if status == "notrun":
-            kv("Status", "Not reached")
-
-    elif key == "writer":
-        if status == "running":
-            kv("Status", "Generating the report…")
-        elif status == "done":
-            kv("Report", "Generated by the writer model")
-        elif status == "warn":
-            kv("Report", "Fallback: assembled locally, not written by the model")
-        elif status == "failed":
-            kv("Problem", esc(friendly_error(info["detail"])))
-        elif status == "notrun":
-            kv("Status", "Not reached")
-        rev = info["revision"]
-        if rev:
-            text = {"running": "Revising with critic feedback…", "done": "Revised using critic feedback",
-                    "failed": "Revision failed; original kept", "skipped": "Skipped (no critic feedback)"}[rev]
-            kv("Revision pass", esc(text))
-        prev = plain_preview(state.get("initial_report") or state.get("report"))
-        if prev and status in ("done", "warn"):
-            body.append(f'<div class="prev">{esc(prev)}</div>')
-
-    elif key == "critic":
-        if status == "running":
-            kv("Status", "Reviewing the report…")
-        elif status == "done":
-            kv("Review", "Feedback received")
-        elif status == "failed":
-            kv("Warning", esc(friendly_error(info["detail"])) if info["detail"] else "Review failed")
-        elif status == "notrun":
-            kv("Status", "Not reached")
-        prev = plain_preview(state.get("feedback"))
-        if prev and status == "done":
-            body.append(f'<div class="prev">{esc(prev)}</div>')
-
-    nxt = " rr-next" if idx < 3 else ""
-    return (
-        f'<div class="rr-stage rr-{status}{nxt}">'
-        f'<div class="top"><span class="idx">STAGE 0{idx + 1}</span>{pill}</div>'
-        f'<div class="nm">{esc(name)}</div><div class="pp">{esc(purpose)}</div>'
-        + "".join(body) + "</div>"
-    )
+    for key, name in STAGES:
+        s = stages[key]
+        detail = ""
+        if s["status"] == "failed":
+            detail = friendly_error(s["detail"])
+        elif key == "search" and s["url_count"] is not None:
+            detail = f'{s["url_count"]} result URL(s) found'
+        elif key == "reader" and s["scraped"] is not None:
+            detail = f'{s["scraped"]} of {s["attempted"]} page(s) read'
+        elif key == "writer" and s["status"] == "warn":
+            detail = "Fallback: assembled locally, not written by the model"
+        elif s["status"] in ("running", "warn"):
+            detail = s["detail"]
+        row(name, s["status"], detail)
+        if key == "writer" and s["revision"]:
+            rev = {"running": ("running", "Revising with critic feedback"),
+                   "done": ("done", "Revised using critic feedback"),
+                   "failed": ("failed", "Revision failed; original kept"),
+                   "skipped": ("notrun", "Revision skipped (no critic feedback)")}[s["revision"]]
+            row("Revising the report", rev[0], rev[1])
+    return f'<div class="sk-tl">{"".join(rows)}</div>'
 
 
-def render_stage_cards(stages, topic, state=None, placeholders=None):
-    if placeholders is None:
-        cols = st.columns(4, gap="large")
-        for i, (key, _, _) in enumerate(STAGES):
-            cols[i].markdown(stage_card_html(i, key, stages[key], topic, state), unsafe_allow_html=True)
-        return None
-    for i, (key, _, _) in enumerate(STAGES):
-        placeholders[i].markdown(stage_card_html(i, key, stages[key], topic, state), unsafe_allow_html=True)
-    return placeholders
+def progress_of(stages):
+    """Genuine progress: finished stages out of 4."""
+    return sum(1 for s in stages.values() if s["status"] in ("done", "warn")), len(stages)
+
+
+def current_stage_name(stages):
+    for key, name in STAGES:
+        if stages[key]["status"] == "running":
+            return name
+    return None
 
 
 # --------------------------------------------------------------------------
 # Run records
 # --------------------------------------------------------------------------
 
-STATE_FIELDS = (
-    "search_result", "scraped_content", "report", "initial_report", "feedback",
-    "source_urls", "pages", "report_method", "revised", "search_ok",
-    "search_error", "writer_error", "critic_error", "revision_error",
-)
+STATE_FIELDS = ("search_result", "scraped_content", "report", "initial_report", "feedback", "source_urls",
+                "pages", "report_method", "revised", "search_ok", "search_error", "writer_error",
+                "critic_error", "revision_error")
 
 
 def compute_status(state, error):
     if not state.get("report"):
         return "failed"
-    problems = (
-        error, state.get("search_error"), not state.get("search_ok", True),
-        state.get("report_method") == "fallback", state.get("critic_error"),
-        state.get("revision_error"),
-        (state.get("pages") is not None and len(state.get("pages", [])) > 0
-         and not any(p.get("status") == "scraped" for p in state.get("pages", []))),
-    )
+    pages = state.get("pages")
+    problems = (error, state.get("search_error"), not state.get("search_ok", True),
+                state.get("report_method") == "fallback", state.get("critic_error"),
+                state.get("revision_error"),
+                (pages is not None and len(pages) > 0 and not any(p.get("status") == "scraped" for p in pages)))
     return "partial" if any(problems) else "complete"
 
 
@@ -493,8 +433,7 @@ def pages_summary(state):
     pages = state.get("pages") or []
     if not pages and state.get("scraped_content") is None:
         return None
-    ok = sum(1 for p in pages if p.get("status") == "scraped")
-    return ok, len(pages)
+    return sum(1 for p in pages if p.get("status") == "scraped"), len(pages)
 
 
 def run_notices(run):
@@ -502,9 +441,8 @@ def run_notices(run):
     if run.get("error"):
         err = run["error"]
         if "progress_callback" in err or "unexpected keyword" in err:
-            out.append(("error",
-                        "Your pipeline.py is the old version (it does not accept progress_callback / state). "
-                        "Replace it with the updated pipeline.py provided with this app, then restart Streamlit."))
+            out.append(("error", "Your pipeline.py is the old version (it does not accept progress_callback / state). "
+                        "Replace it with the updated pipeline.py, then restart Streamlit."))
         else:
             out.append(("error", f"The run stopped unexpectedly. {friendly_error(err)}"))
         out.append(("info", f"Technical detail: {err}"))
@@ -518,15 +456,13 @@ def run_notices(run):
     elif ps and 0 < ps[0] < ps[1]:
         out.append(("info", f"{ps[1] - ps[0]} of {ps[1]} attempted page(s) could not be read."))
     if s.get("report_method") == "fallback":
-        extra = (" The critic's feedback was then used by the revision model to rewrite it, "
-                 "so the final text below is a model revision of that fallback draft." if s.get("revised") else "")
-        out.append(("warning",
-                    "Fallback report: the writer model failed, so the initial draft was assembled locally "
-                    "from the collected research rather than generated by the writer." + extra
+        extra = (" The critic's feedback was then used to rewrite it, so the final text is a model revision "
+                 "of that fallback draft." if s.get("revised") else "")
+        out.append(("warning", "Fallback report: the writer model failed, so the initial draft was assembled locally "
+                    "from the collected research." + extra
                     + (f" {friendly_error(s['writer_error'])}" if s.get("writer_error") else "")))
     if s.get("report") and not s.get("feedback"):
-        out.append(("warning",
-                    "The critic review failed or returned no feedback. The report is shown without a review. "
+        out.append(("warning", "The critic review failed or returned no feedback. The report is shown without a review. "
                     + friendly_error(s.get("critic_error", ""))))
     if s.get("revision_error"):
         out.append(("warning", "The revision pass failed, so the original report is shown. "
@@ -534,26 +470,43 @@ def run_notices(run):
     return out
 
 
-def execute_run(topic, backend):
+def run_panel_html(topic, stages, elapsed=None, running=False, status=None):
+    """Sidebar 'Current run' panel, built only from real state."""
+    if running:
+        done, total = progress_of(stages)
+        stage = current_stage_name(stages) or "Starting"
+        el = f" · {elapsed:.0f}s elapsed" if elapsed is not None else ""
+        return (f'<div class="sk-run"><span class="sk-dot run"></span><b>Running</b>{el}<br>'
+                f'{esc(plain_preview(topic, 70))}<br>{esc(stage)}…'
+                f'<div class="sk-bar"><i style="width:{100 * done / total:.0f}%"></i></div>'
+                f'<span style="font-size:.72rem">{done} of {total} stages done</span></div>')
+    if status:
+        return (f'<div class="sk-run"><span class="sk-dot {RUN_CLS[status]}"></span><b>{RUN_LABEL[status]}</b><br>'
+                f'{esc(plain_preview(topic, 70))}</div>')
+    return '<div class="sk-run"><span class="sk-dot"></span>Idle. No research in progress.</div>'
+
+
+def execute_run(topic, backend, side_ph):
     """Run the real pipeline, updating the UI from real progress events."""
     started = datetime.now()
     t0 = time.perf_counter()
     stages, events, state, error = new_stages(), [], {}, None
 
-    st.markdown('<div class="rr-h2">Live workflow</div>', unsafe_allow_html=True)
-    cols = st.columns(4, gap="large")
-    holders = [c.empty() for c in cols]
-    render_stage_cards(stages, topic, None, holders)
-    log = st.status("Research in progress…", expanded=True)
+    st.markdown('<div class="sk-label">Live workflow</div>', unsafe_allow_html=True)
+    holder = st.empty()
+    holder.markdown(timeline_html(stages), unsafe_allow_html=True)
+    side_ph.markdown(run_panel_html(topic, stages, 0, True), unsafe_allow_html=True)
+    log = st.status("Research in progress…", expanded=False)
 
     def on_event(ev):
         ev = dict(ev)
         ev["t"] = round(time.perf_counter() - t0, 1)
         events.append(ev)
         apply_event(stages, ev)
-        render_stage_cards(stages, topic, None, holders)
-        msg = plain_preview(ev.get("message", ""), 150)
-        log.text(f"+{ev['t']:>5.1f}s  {ev.get('stage')} · {ev.get('event')}  {msg}")
+        holder.markdown(timeline_html(stages), unsafe_allow_html=True)
+        side_ph.markdown(run_panel_html(topic, stages, ev["t"], True), unsafe_allow_html=True)
+        log.text(f"+{ev['t']:>5.1f}s  {ev.get('stage')} · {ev.get('event')}  "
+                 f"{plain_preview(ev.get('message', ''), 150)}")
 
     try:
         backend.research_pipeline(topic, progress_callback=on_event, state=state)
@@ -567,22 +520,15 @@ def execute_run(topic, backend):
 
     snapshot = {k: state[k] for k in STATE_FIELDS if k in state}
     status = compute_status(snapshot, error)
-    render_stage_cards(stages, topic, snapshot, holders)
-    log.update(
-        label={"complete": "Research complete", "partial": "Research finished with issues",
-               "failed": "Research failed"}[status],
-        state={"complete": "complete", "partial": "complete", "failed": "error"}[status],
-        expanded=False,
-    )
-
-    run = {
-        "id": uuid.uuid4().hex[:8], "topic": topic, "started_at": started,
-        "duration": round(time.perf_counter() - t0, 1), "status": status,
-        "state": snapshot, "events": events, "error": error,
-    }
+    log.update(label={"complete": "Research complete", "partial": "Research finished with issues",
+                      "failed": "Research failed"}[status],
+               state={"complete": "complete", "partial": "complete", "failed": "error"}[status], expanded=False)
+    run = {"id": uuid.uuid4().hex[:8], "topic": topic, "started_at": started,
+           "duration": round(time.perf_counter() - t0, 1), "status": status,
+           "state": snapshot, "events": events, "error": error}
     st.session_state.runs.append(run)
     st.session_state.active_run = run["id"]
-    st.session_state.view = "dashboard"
+    st.session_state.view = "run"
     st.rerun()
 
 
@@ -612,11 +558,9 @@ def collect_sources(state):
         if u in seen:
             continue
         seen.add(u)
-        out.append({
-            "url": u, "title": titles.get(u),
-            "origin": "Search result" if u in search_urls else "Found in page content",
-            "read": page_status.get(u),
-        })
+        out.append({"url": u, "title": titles.get(u),
+                    "origin": "Search result" if u in search_urls else "Found in page content",
+                    "read": page_status.get(u)})
     return out
 
 
@@ -625,8 +569,7 @@ def render_sources(state):
     if not sources:
         st.info("No source URLs were collected for this run.")
         return
-    st.caption("URLs collected from the search results and scraped pages. "
-               "They are listed as retrieved and have not been independently verified.")
+    st.caption("URLs collected from the search results and scraped pages, listed as retrieved and not independently verified.")
     rows = []
     for i, s in enumerate(sources, 1):
         link = safe_url(s["url"])
@@ -636,9 +579,8 @@ def render_sources(state):
         title = f'<div class="ti">{esc(s["title"])}</div>' if s["title"] else ""
         read = {"scraped": "page read", "skipped": "page could not be read"}.get(
             s["read"], "not read (the backend reads at most 2 pages)")
-        rows.append(
-            f'<div class="rr-src"><div class="num">{i:02d}</div><div>{title}{anchor}'
-            f'<div class="meta">{esc(s["origin"])} · {esc(read)}</div></div></div>')
+        rows.append(f'<div class="sk-src"><div class="num">{i:02d}</div><div>{title}{anchor}'
+                    f'<div class="meta">{esc(s["origin"])} · {esc(read)}</div></div></div>')
     st.markdown("".join(rows), unsafe_allow_html=True)
 
 
@@ -662,16 +604,14 @@ def render_critic(run):
     s = run["state"]
     fb = s.get("feedback")
     if not fb:
-        st.warning("No critic feedback is available for this run. "
-                   + friendly_error(s.get("critic_error", "")))
+        st.warning("No critic feedback is available for this run. " + friendly_error(s.get("critic_error", "")))
         if s.get("critic_error"):
             st.caption(f"Details: {s['critic_error']}")
         return
     if s.get("revised"):
-        st.caption("The critic reviewed the initial report. The final report was then revised "
-                   "by the writer using this feedback.")
+        st.caption("The critic reviewed the initial report. The final report was then revised using this feedback.")
     parsed = parse_critic(fb)
-    with keyed_container("rr-critic"):
+    with keyed_container("sk-critic"):
         if "score" in parsed:
             st.markdown(f"**Critic's score:** {esc(parsed['score'])}/10")
         if "strengths" in parsed:
@@ -716,6 +656,14 @@ def render_raw(run):
                     f"{plain_preview(ev.get('message', ''), 150)}")
 
 
+def _supports_wrap():
+    try:
+        import inspect
+        return "wrap_lines" in inspect.signature(st.code).parameters
+    except Exception:
+        return False
+
+
 def render_export(run):
     report = run["state"].get("report") or ""
     if not report:
@@ -729,7 +677,7 @@ def render_export(run):
     with c2:
         stretch(st.download_button, "Download as plain text (.txt)", to_plain_text(report),
                 file_name=f"{base}.txt", mime="text/plain", key=f"{run['id']}-dl-txt")
-    st.markdown('<div class="rr-h2">Copy report text</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sk-label">Copy report text</div>', unsafe_allow_html=True)
     st.caption("Use the copy icon at the top-right of the block below.")
     if _supports_wrap():
         st.code(report, language="markdown", wrap_lines=True)
@@ -737,40 +685,25 @@ def render_export(run):
         st.code(report, language="markdown")
 
 
-def _supports_wrap():
-    try:
-        import inspect
-        return "wrap_lines" in inspect.signature(st.code).parameters
-    except Exception:
-        return False
-
-
 def method_label(state):
-    m = state.get("report_method")
-    base = {"ai": "Generated by the writer model", "fallback": "Fallback draft (assembled locally)"}.get(
-        m, "Generation method unknown")
-    if state.get("revised"):
-        base += " · revised with critic feedback"
-    return base
+    base = {"ai": "Written by the writer model", "fallback": "Fallback draft (assembled locally)"}.get(
+        state.get("report_method"), "Generation method unknown")
+    return base + (" · revised with critic feedback" if state.get("revised") else "")
 
 
 def render_overview(run):
     s = run["state"]
-    status = run["status"]
-    cls = {"complete": "ok", "partial": "warn", "failed": "bad"}[status]
-    label = {"complete": "Completed", "partial": "Completed with issues", "failed": "Failed"}[status]
     ps = pages_summary(s)
-    chips = [f'<span class="rr-chip {cls}">{label}</span>',
-             f'<span class="rr-chip {"warn" if s.get("report_method") == "fallback" else ""}">{esc(method_label(s))}</span>']
+    chips = [f'<span class="sk-chip {RUN_CLS[run["status"]]}">{RUN_LABEL[run["status"]]}</span>',
+             f'<span class="sk-chip">{esc(method_label(s))}</span>']
     if ps and ps[1]:
-        chips.append(f'<span class="rr-chip">{ps[0]} of {ps[1]} pages scraped</span>')
-    chips.append(f'<span class="rr-chip">{esc(fmt_time(run["started_at"]))} · {run["duration"]}s</span>')
+        chips.append(f'<span class="sk-chip">{ps[0]} of {ps[1]} pages scraped</span>')
+    if s.get("source_urls"):
+        chips.append(f'<span class="sk-chip">{len(s["source_urls"])} sources</span>')
+    chips.append(f'<span class="sk-chip">{esc(fmt_time(run["started_at"]))} · {run["duration"]}s</span>')
     title = "Research report" if s.get("report") else "No report generated"
-    st.markdown(
-        f'<div class="rr-card"><div class="t">{title}</div>'
-        f'<div class="q">{esc(run["topic"])}</div><div class="rr-chips">{"".join(chips)}</div></div>',
-        unsafe_allow_html=True,
-    )
+    st.markdown(f'<div class="sk-card"><div class="t">{title}</div><div class="q">{esc(run["topic"])}</div>'
+                f'<div class="sk-chips">{"".join(chips)}</div></div>', unsafe_allow_html=True)
 
 
 def render_run(run):
@@ -778,23 +711,20 @@ def render_run(run):
     for ev in run["events"]:
         apply_event(stages, ev)
     finalize_stages(stages)
-    st.markdown('<div class="rr-h2">Workflow</div>', unsafe_allow_html=True)
-    render_stage_cards(stages, run["topic"], run["state"])
-
-    st.markdown('<div class="rr-h2">Results</div>', unsafe_allow_html=True)
     render_overview(run)
     for level, text in run_notices(run):
         getattr(st, level)(text)
+    st.markdown(timeline_html(stages), unsafe_allow_html=True)
 
     t_report, t_sources, t_critic, t_raw, t_export = st.tabs(
         ["Final report", "Sources", "Critic review", "Raw research", "Export"])
     with t_report:
         report = run["state"].get("report")
         if report:
-            with keyed_container("rr-report"):
+            with keyed_container("sk-report"):
                 st.markdown(report)
-            st.caption("The report is model-generated (or assembled from raw research) and its claims "
-                       "have not been independently verified. Check important points against the sources.")
+            st.caption("The report is model-generated (or assembled from raw research); its claims have not been "
+                       "independently verified. Check important points against the sources.")
         else:
             st.info("No report was produced. Partial research data, if any, is under “Raw research”.")
     with t_sources:
@@ -821,19 +751,15 @@ def cb_start():
     st.session_state.pending_topic = topic
 
 
-def cb_clear():
-    st.session_state.topic_input = ""
-    st.session_state.input_error = None
-
-
-def cb_example(text):
+def cb_fill(text):
     st.session_state.topic_input = text
     st.session_state.input_error = None
+    st.session_state.view = "home"
 
 
 def cb_new():
     st.session_state.active_run = None
-    st.session_state.view = "dashboard"
+    st.session_state.view = "home"
     st.session_state.topic_input = ""
     st.session_state.input_error = None
 
@@ -844,7 +770,15 @@ def cb_view(name):
 
 def cb_open(run_id):
     st.session_state.active_run = run_id
-    st.session_state.view = "dashboard"
+    st.session_state.view = "run"
+
+
+def cb_theme():
+    st.session_state.theme = "light" if st.session_state.theme == "dark" else "dark"
+
+
+def get_run(run_id):
+    return next((r for r in st.session_state.runs if r["id"] == run_id), None)
 
 
 # --------------------------------------------------------------------------
@@ -852,174 +786,175 @@ def cb_open(run_id):
 # --------------------------------------------------------------------------
 
 
-def get_run(run_id):
-    for r in st.session_state.runs:
-        if r["id"] == run_id:
-            return r
-    return None
-
-
-def render_sidebar(backend, backend_err, running, running_topic):
+def render_sidebar(running):
     ss = st.session_state
     with st.sidebar:
-        st.markdown(
-            f'<div class="rr-brand">{LOGO}<div><div class="name">SearchKnowtix</div>'
-            f'<div class="sub">AI research workspace</div></div></div>', unsafe_allow_html=True)
-        stretch(st.button, "＋  New Research", type="primary", on_click=cb_new,
-                disabled=running, key="btn_new")
+        st.markdown(f'<div class="sk-brand">{LOGO}<div><div class="name">SearchKnowtix</div>'
+                    f'<div class="sub">snooping, academically.</div></div></div>', unsafe_allow_html=True)
+        stretch(st.button, "＋  New research", on_click=cb_new, disabled=running, key="btn_new")
+        st.write("")
+        nav = [("home", "Home", ":material/home:"), ("history", "Research history", ":material/history:"),
+               ("projects", "Projects", ":material/folder:")]
+        for name, label, icon in nav:
+            active = ss.view == name or (name == "home" and ss.view == "run")
+            stretch(st.button, f"{icon}  {label}", on_click=cb_view, args=(name,), disabled=running,
+                    type="primary" if active else "secondary", key=f"nav_{name}")
 
-        st.markdown('<div class="rr-side-h">Navigate</div>', unsafe_allow_html=True)
-        stretch(st.button, "Dashboard", on_click=cb_view, args=("dashboard",), disabled=running,
-                type="primary" if ss.view == "dashboard" else "secondary", key="nav_dash")
-        stretch(st.button, f"Research History ({len(ss.runs)})", on_click=cb_view, args=("history",),
-                disabled=running, type="primary" if ss.view == "history" else "secondary", key="nav_hist")
-
-        if ss.runs:
-            st.markdown('<div class="rr-side-h">Recent</div>', unsafe_allow_html=True)
-            glyph = {"complete": "●", "partial": "◐", "failed": "✕"}
-            for r in reversed(ss.runs[-6:]):
-                stretch(st.button, f"{glyph[r['status']]}  {plain_preview(r['topic'], 34)}",
-                        on_click=cb_open, args=(r["id"],), disabled=running, key=f"recent_{r['id']}",
-                        help=r["topic"])
-
-        st.markdown('<div class="rr-side-h">Current run</div>', unsafe_allow_html=True)
-        if running:
-            st.markdown(f'<div class="rr-run-ind"><span class="rr-dot run"></span>Running: '
-                        f'{esc(plain_preview(running_topic, 60))}</div>', unsafe_allow_html=True)
-        elif ss.active_run and get_run(ss.active_run):
-            r = get_run(ss.active_run)
-            dot = {"complete": "ok", "partial": "warn", "failed": "bad"}[r["status"]]
-            st.markdown(f'<div class="rr-run-ind"><span class="rr-dot {dot}"></span>Viewing: '
-                        f'{esc(plain_preview(r["topic"], 60))}<br><span class="rr-side-note">'
-                        f'{esc(fmt_time(r["started_at"]))}</span></div>', unsafe_allow_html=True)
+        st.markdown('<div class="sk-label">Current run</div>', unsafe_allow_html=True)
+        side_ph = st.empty()
+        r = get_run(ss.active_run) if ss.active_run else None
+        if r:
+            side_ph.markdown(run_panel_html(r["topic"], new_stages(), status=r["status"]), unsafe_allow_html=True)
+            if not running and ss.view != "run":
+                stretch(st.button, "Open this run", on_click=cb_open, args=(r["id"],), key="btn_open_active")
         else:
-            st.markdown('<div class="rr-run-ind"><span class="rr-dot"></span>Idle</div>', unsafe_allow_html=True)
+            side_ph.markdown(run_panel_html("", new_stages()), unsafe_allow_html=True)
+        st.markdown('<div class="sk-statement">Better questions.<br>Deeper answers.</div>', unsafe_allow_html=True)
+    return side_ph
 
-        st.markdown('<div class="rr-side-h">How it works</div>', unsafe_allow_html=True)
-        st.markdown(
-            '<ul class="rr-flow">'
-            '<li><span class="n">1</span><span><b>Search</b> the web with Tavily</span></li>'
-            '<li><span class="n">2</span><span><b>Read</b> up to two result pages</span></li>'
-            '<li><span class="n">3</span><span><b>Write</b> a structured report</span></li>'
-            '<li><span class="n">4</span><span><b>Review</b> it with a critic</span></li></ul>'
-            '<div class="rr-side-note">After the review, the writer revises the report once using the '
-            "critic's feedback.</div>", unsafe_allow_html=True)
 
-        st.markdown('<div class="rr-side-h">Backend configuration</div>', unsafe_allow_html=True)
-        if backend is None:
-            st.markdown(f'<div class="rr-side-note"><span class="rr-dot bad"></span>Backend not loaded</div>',
-                        unsafe_allow_html=True)
-        else:
-            cfg = backend_config(backend)
-            yn = lambda b: "loaded" if b else "missing"
-            st.markdown(
-                '<div class="rr-side-note">'
-                f'Model: {esc(cfg["model"])}<br>'
-                f'Gemini API key: {yn(cfg["google_key"])}<br>'
-                f'Tavily API key: {yn(cfg["tavily_key"])}<br>'
-                'Search: up to 5 results<br>Reader: up to 2 pages'
-                '</div>', unsafe_allow_html=True)
+def render_hero():
+    st.markdown(
+        '<div class="sk-hero"><div class="sk-label accent">Multi-agent research</div>'
+        '<h1>Big question energy.</h1>'
+        '<p>SearchKnowtix uses multiple AI agents to research, read, analyze and deliver structured, '
+        'reliable insights — with sources you can trust.</p></div>', unsafe_allow_html=True)
 
 
 def render_composer(backend, running):
-    ss = st.session_state
-    st.markdown('<div class="rr-h2">Start a research run</div>', unsafe_allow_html=True)
-    st.text_area(
-        "Research topic", key="topic_input", height=120, max_chars=1000, disabled=running,
-        label_visibility="collapsed",
-        placeholder="Describe what you want researched. Detailed questions work, not just keywords.",
-    )
-    if ss.get("input_error"):
-        st.error(ss.input_error)
-    c1, c2, c3 = st.columns([2, 1, 4])
-    with c1:
-        stretch(st.button, "Start Research", type="primary", on_click=cb_start,
-                disabled=running or backend is None, key="btn_start")
-    with c2:
-        stretch(st.button, "Clear", on_click=cb_clear, disabled=running, key="btn_clear")
-    with c3:
-        if running:
-            st.caption("A research run is in progress. Inputs are locked until it finishes.")
+    # A form makes Enter submit; while a run is active the widgets are disabled (no duplicate submissions).
+    with st.form("composer", border=False):
+        c1, c2 = st.columns([6, 1.3], gap="small")
+        c1.text_input("Research topic", key="topic_input", disabled=running, max_chars=1000,
+                      label_visibility="collapsed", placeholder="What do you want to understand?")
+        c2.form_submit_button("Search  →", on_click=cb_start, disabled=running or backend is None)
+    if st.session_state.get("input_error"):
+        st.error(st.session_state.input_error)
+    if running:
+        st.caption("A research run is in progress. Inputs are locked until it finishes.")
+
+
+def render_topics(running):
+    st.markdown('<div class="sk-label">Explore topics</div>', unsafe_allow_html=True)
+    with keyed_container("topics"):
+        cols = st.columns(len(TOPICS), gap="small")
+        for i, (title, sub, icon, prompt) in enumerate(TOPICS):
+            with cols[i]:
+                stretch(st.button, f"{icon} **{title}**  \n{sub}", on_click=cb_fill, args=(prompt,),
+                        disabled=running, key=f"tp_{i}")
+
+
+def recent_rows(limit=None):
+    runs = list(reversed(st.session_state.runs))
+    for r in (runs[:limit] if limit else runs):
+        s = r["state"]
+        summary = plain_preview(s.get("report"), 120) or "No report was produced for this run."
+        n = len(s.get("source_urls") or [])
+        meta = f"{RUN_LABEL[r['status']]} · {fmt_time(r['started_at'])}" + (f" · {n} sources" if n else "")
+        stretch(st.button, f"**{plain_preview(r['topic'], 90)}**  \n{summary}  \n{meta}  ›",
+                on_click=cb_open, args=(r["id"],), key=f"row_{r['id']}")
+
+
+def render_recent():
+    h1, h2 = st.columns([3, 1])
+    h1.markdown('<div class="sk-label">Recent research</div>', unsafe_allow_html=True)
+    if len(st.session_state.runs) > 4:
+        with h2:
+            stretch(st.button, "View all →", on_click=cb_view, args=("history",), key="btn_viewall")
+    if not st.session_state.runs:
+        st.info("No research yet. Ask a question above or pick a topic to run your first research. "
+                "Runs from this session will appear here.")
+        return
+    with keyed_container("recent"):
+        recent_rows(4)
+
+
+def render_quick_actions(running):
+    with keyed_container("quickcol"):
+        st.markdown('<div class="sk-label">Quick actions</div>', unsafe_allow_html=True)
+        with keyed_container("quick"):
+            for i, (title, sub, icon, prompt) in enumerate(ACTIONS):
+                stretch(st.button, f"{icon} **{title}**  \n{sub}", on_click=cb_fill, args=(prompt,),
+                        disabled=running, key=f"qa_{i}")
+        r = get_run(st.session_state.active_run) if st.session_state.active_run else None
+        if r:
+            stages = new_stages()
+            for ev in r["events"]:
+                apply_event(stages, ev)
+            finalize_stages(stages)
+            done, total = progress_of(stages)
+            line = f"Last run: {done} of {total} agent stages completed"
         else:
-            st.caption("Very long questions may exceed the search provider's query limit; "
-                       "if the search stage fails, try a shorter question.")
-    st.caption("Try an example (fills the box, does not run anything):")
-    cols = st.columns(len(EXAMPLE_TOPICS))
-    for i, ex in enumerate(EXAMPLE_TOPICS):
-        with cols[i]:
-            stretch(st.button, ex, on_click=cb_example, args=(ex,), disabled=running, key=f"ex_{i}")
+            line = "Idle · agents start when you run a search"
+        st.markdown(f'<div class="sk-agents"><div class="t">AI agents at work</div>'
+                    f'<div class="s">Research · Analyze · Synthesize · Review</div>'
+                    f'<div class="s" style="color:var(--muted)">{esc(line)}</div></div>'
+                    '<div class="sk-tag">Curiosity fuels progress.</div>', unsafe_allow_html=True)
 
 
 def render_history():
-    runs = st.session_state.runs
-    st.markdown('<div class="rr-h2">Research history (this session)</div>', unsafe_allow_html=True)
-    if not runs:
-        st.info("No research runs yet. Completed runs from this session will appear here.")
+    st.markdown('<div class="sk-label">Research history (this session)</div>', unsafe_allow_html=True)
+    if not st.session_state.runs:
+        st.info("No research yet. Completed runs from this session will appear here.")
         return
     st.caption("History lives in this browser session only and is cleared when the session ends.")
-    for r in reversed(runs):
-        cls = {"complete": "ok", "partial": "warn", "failed": "bad"}[r["status"]]
-        label = {"complete": "Completed", "partial": "Completed with issues", "failed": "Failed"}[r["status"]]
-        c1, c2 = st.columns([6, 1])
-        c1.markdown(
-            f'<div class="rr-card" style="margin-bottom:.2rem"><div class="q" style="margin:0 0 .5rem">'
-            f'{esc(plain_preview(r["topic"], 200))}</div><div class="rr-chips">'
-            f'<span class="rr-chip {cls}">{label}</span>'
-            f'<span class="rr-chip">{esc(fmt_time(r["started_at"]))}</span>'
-            f'<span class="rr-chip">{esc(method_label(r["state"]))}</span></div></div>',
-            unsafe_allow_html=True)
-        with c2:
-            stretch(st.button, "Open", on_click=cb_open, args=(r["id"],), key=f"hist_open_{r['id']}")
+    with keyed_container("recent"):
+        recent_rows()
 
 
 def main():
     ss = st.session_state
     ss.setdefault("runs", [])
     ss.setdefault("active_run", None)
-    ss.setdefault("view", "dashboard")
+    ss.setdefault("view", "home")
     ss.setdefault("topic_input", "")
     ss.setdefault("input_error", None)
+    ss.setdefault("theme", "dark")
 
-    st.markdown(CSS, unsafe_allow_html=True)
+    st.markdown(theme_css(ss.theme) + CSS, unsafe_allow_html=True)
 
-    # A pending topic is consumed exactly once, so reruns never repeat the pipeline.
-    pending = ss.pop("pending_topic", None)
+    pending = ss.pop("pending_topic", None)  # consumed once so reruns never repeat the pipeline
     running = pending is not None
-
     backend, backend_err = load_backend()
-    render_sidebar(backend, backend_err, running, pending)
+    side_ph = render_sidebar(running)
 
-    st.markdown(
-        '<div class="rr-hero"><div class="eyebrow">Multi-agent research</div><h1>SearchKnowtix</h1>'
-        '<div class="tag">Your AI-powered research workspace</div>'
-        '<div class="desc">SearchKnowtix searches the web, extracts information from result pages, '
-        'generates a structured report, and has a critic review the findings. Search deeper. '
-        'Think smarter. Research with confidence.</div></div>', unsafe_allow_html=True)
+    _, tcol = st.columns([12, 1])
+    with tcol:
+        st.button("☀" if ss.theme == "dark" else "☾", on_click=cb_theme, key="theme_btn",
+                  help="Switch to light theme" if ss.theme == "dark" else "Switch to dark theme")
 
     if backend is None:
         st.error("The research backend could not be loaded, so research is unavailable.")
         st.markdown(f"**Details:** `{backend_err}`")
-        st.markdown(
-            "Check that `.env` in the project folder defines `GOOGLE_API_KEY` and `TAVILY_API_KEY`, "
-            "and that dependencies are installed: `pip install -r requirements.txt`.")
+        st.markdown("Check that `.env` defines `GOOGLE_API_KEY` and `TAVILY_API_KEY`, and that dependencies "
+                    "are installed: `pip install -r requirements.txt`.")
 
     if ss.view == "history" and not running:
         render_history()
         return
+    if ss.view == "projects" and not running:
+        st.markdown('<div class="sk-label">Projects</div>', unsafe_allow_html=True)
+        st.info("Projects are not available yet. Your research runs are under Research history.")
+        return
 
+    render_hero()
     render_composer(backend, running)
 
     if running:
-        execute_run(pending, backend)  # ends with st.rerun()
+        execute_run(pending, backend, side_ph)  # ends with st.rerun()
         return
 
     run = get_run(ss.active_run) if ss.active_run else None
-    if run:
+    if ss.view == "run" and run:
         render_run(run)
-    else:
-        st.markdown('<div class="rr-h2">Workflow</div>', unsafe_allow_html=True)
-        render_stage_cards(new_stages(), "", None)
-        st.caption("Nothing has run yet. Each stage reports its real status once you start a research run.")
+        return
+    render_topics(running)
+    st.markdown('<hr class="sk-rule">', unsafe_allow_html=True)
+    left, right = st.columns([7, 3], gap="large")
+    with left:
+        render_recent()
+    with right:
+        render_quick_actions(running)
 
 
 main()
