@@ -3,7 +3,6 @@
 Backend contract is unchanged: `pipeline.research_pipeline(topic, progress_callback=..., state=...)`.
 Requires Streamlit >= 1.40 (keyed containers, Material icons in labels, form borders).
 """
-
 import html
 import os
 import re
@@ -13,6 +12,8 @@ from datetime import datetime
 from urllib.parse import urlparse
 
 import streamlit as st
+
+from database import init_db, save_run, get_all_runs
 
 st.set_page_config(page_title="SearchKnowtix", page_icon="✦", layout="wide",
                    initial_sidebar_state="expanded")
@@ -535,7 +536,12 @@ def execute_run(topic, backend, side_ph):
     run = {"id": uuid.uuid4().hex[:8], "topic": topic, "started_at": started,
            "duration": round(time.perf_counter() - t0, 1), "status": status,
            "state": snapshot, "events": events, "error": error}
-    st.session_state.runs.append(run)
+
+    st.session_state.runs.append(run)  # available immediately in this session
+    try:
+        save_run(run)  # persist to the database
+    except Exception as exc:  # shown after the rerun; the run stays visible either way
+        st.session_state.save_error = f"Could not save this run to the database: {exc}"
     st.session_state.active_run = run["id"]
     st.session_state.view = "run"
     st.rerun()
@@ -786,6 +792,31 @@ def cb_theme():
     st.session_state.theme = "light" if st.session_state.theme == "dark" else "dark"
 
 
+def normalise_runs(rows):
+    """Make rows from the database safe for the UI: datetimes, defaults, oldest first."""
+    out = []
+    for r in rows or []:
+        r = dict(r)
+        t = r.get("started_at")
+        if isinstance(t, str):
+            try:
+                t = datetime.fromisoformat(t)
+            except ValueError:
+                t = datetime.now()
+        r["started_at"] = t or datetime.now()
+        r.setdefault("id", uuid.uuid4().hex[:8])
+        r.setdefault("topic", "")
+        r["state"] = r.get("state") or {}
+        r["events"] = r.get("events") or []
+        r["duration"] = r.get("duration") or 0
+        r["error"] = r.get("error")
+        if r.get("status") not in RUN_LABEL:
+            r["status"] = "failed"
+        out.append(r)
+    out.sort(key=lambda r: r["started_at"])
+    return out
+
+
 def get_run(run_id):
     return next((r for r in st.session_state.runs if r["id"] == run_id), None)
 
@@ -901,12 +932,18 @@ def render_quick_actions(running):
                     '<div class="sk-tag">Curiosity fuels progress.</div>', unsafe_allow_html=True)
 
 
+
 def render_history():
-    st.markdown('<div class="sk-label">Research history (this session)</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="sk-label">Research history</div>',
+        unsafe_allow_html=True,
+    )
+
     if not st.session_state.runs:
-        st.info("No research yet. Completed runs from this session will appear here.")
+        st.info("No research yet. Completed runs will appear here.")
         return
-    st.caption("History lives in this browser session only and is cleared when the session ends.")
+
+    st.caption("Your completed research runs are saved locally.")
     with keyed_container("recent"):
         recent_rows()
 
@@ -919,6 +956,14 @@ def main():
     ss.setdefault("topic_input", "")
     ss.setdefault("input_error", None)
     ss.setdefault("theme", "dark")
+    if "runs_loaded" not in ss:
+        try:
+            init_db()
+            ss["runs"] = normalise_runs(get_all_runs())
+        except Exception as exc:
+            ss["runs"] = []
+            ss["save_error"] = f"Could not load saved research history: {exc}"
+        ss["runs_loaded"] = True
 
     st.markdown(theme_css(ss.theme) + CSS, unsafe_allow_html=True)
 
@@ -946,20 +991,27 @@ def main():
         st.info("Projects are not available yet. Your research runs are under Research history.")
         return
 
-    render_hero()
-    render_composer(backend, running)
+    if ss.get("save_error"):
+        st.warning(ss.pop("save_error"))
 
+    # Each render_* call below happens exactly once per script run (unique widget keys).
     if running:
+        render_hero()
+        render_composer(backend, running)
         execute_run(pending, backend, side_ph)  # ends with st.rerun()
         return
 
-    run = get_run(ss.active_run) if ss.active_run else None
-    if ss.view == "run" and run:
-        render_run(run)
+    if ss.view == "run" and ss.active_run and get_run(ss.active_run):
+        render_composer(backend, running)
+        render_run(get_run(ss.active_run))
         return
+    ss.view = "home" if ss.view == "run" else ss.view
+
+    render_hero()
+    render_composer(backend, running)
     render_topics(running)
     st.markdown('<hr class="sk-rule">', unsafe_allow_html=True)
-    left, right = st.columns([7, 3], gap="large")
+    left, right = st.columns([2.2, 1], gap="large")
     with left:
         render_recent()
     with right:

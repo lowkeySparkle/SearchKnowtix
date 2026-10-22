@@ -4,8 +4,6 @@ import builtins
 from rich import print as _rich_print
 from tools import web_search, scrape_url
 from agents import writer_chain, critic_chain, revision_chain
-
-
 def print(*args, **kwargs):
     """Terminal logging that can never break the pipeline.
 
@@ -20,8 +18,6 @@ def print(*args, **kwargs):
             builtins.print(*args, **kwargs)
         except Exception:
             pass
-
-
 def extract_urls(text):
     """Extract unique URLs and remove trailing punctuation."""
     found = re.findall(r"""https?://[^\s<>"']+""", str(text))
