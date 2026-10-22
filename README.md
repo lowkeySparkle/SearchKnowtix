@@ -1,45 +1,33 @@
 # SearchKnowtix
-### AI-Powered Multi-Agent Research Platform
-**SearchKnowtix** is a Python-based research platform designed to help users explore topics, collect information from web sources, and generate structured research reports using a multi-agent AI workflow.
 
-> From research questions to organized insights — all in one workspace.
+**A multi-agent AI research tool built with Python and Streamlit.**
 
----
+SearchKnowtix is a project I'm building to make researching topics easier. Instead of manually searching through information and putting everything together, the system uses AI agents to help search for relevant information, process it, and turn the findings into a research report.
 
-## ✨ Features
+The goal is simple: make the research process more organized, from the initial search to the final report.
 
-- 🔎 **Web Research** — Search for relevant information on a given topic.
-- 💭 **Multi-Agent Architecture** — Organize research tasks across specialized AI components.
-- 📚 **Content Processing** — Collect and process information for report generation.
-- 📝 **Structured Reports** — Turn research findings into readable outputs.
-- 🖥️ **Streamlit Interface** — Access the research workflow through a web-based application.
-- 🗂️ **Research History** — Support for retaining and revisiting previous research, depending on the configured storage.
+## What it does
 
-## 🧠 How It Works
+- Searches the web for information related to a research topic.
+- Uses different AI components to handle parts of the research workflow.
+- Processes collected information to help generate a report.
+- Provides a Streamlit interface to interact with the system.
+- Supports research history where the configured storage is available.
 
-1. **Enter a topic** — Provide the subject you want to investigate.
-2. **Search the web** — Retrieve potentially relevant online sources.
-3. **Process information** — Analyze collected content through the research workflow.
-4. **Generate a report** — Produce an organized research output.
-5. **Review your findings** — Read the results in the application.
+## How it works
 
-*The exact workflow depends on the agents and features enabled in the current implementation.*
+The workflow starts when a user enters a research topic. The system searches for relevant information, processes the collected content, and uses its AI workflow to produce a report.
 
-## 🛠️ Technology Stack
+The project is built around separate components for searching, reading, writing, and reviewing research, depending on the workflow configured in the code.
 
-- Python
-- Streamlit
-- Large language model APIs
-- Web search and content extraction tools
-- Git and GitHub
+## Built with
 
-## 🚀 Getting Started
+- **Python** — core application and research pipeline
+- **Streamlit** — web interface
+- **LLM APIs** — AI-powered processing and report generation
+- **Web search tools** — finding relevant online sources
 
-### Prerequisites
-
-- Python installed on your computer
-- API keys for the providers configured in the project
-- Git (optional, for cloning the repository)
+## Running it locally
 
 ### 1. Clone the repository
 
@@ -48,68 +36,53 @@ git clone https://github.com/lowkeySparkle/SearchKnowtix.git
 cd SearchKnowtix
 ```
 
-### 2. Create a virtual environment
+### 2. Set up a virtual environment
 
 ```bash
 python -m venv .venv
 ```
 
-Activate it on Windows PowerShell:
+On Windows, activate it with:
 
 ```powershell
 .\.venv\Scripts\Activate.ps1
 ```
 
-### 3. Install dependencies
+### 3. Install the dependencies
 
 ```bash
 python -m pip install -r requirements.txt
 ```
 
-### 4. Configure API keys
+### 4. Configure your API keys
 
-Set up the API keys required by your configured providers using environment variables or the appropriate local secrets configuration.
+Add the API keys required by the project to your local environment or supported secrets configuration. Check the existing code to see which providers are being used.
 
-**Never commit API keys, passwords, or private credentials to GitHub.**
+Keep your credentials private. Don't upload your `.env` file or secret keys to GitHub.
 
-### 5. Run the application
+### 5. Start the app
 
 ```bash
 python -m streamlit run app.py
 ```
 
-Open the local URL printed in your terminal.
+Streamlit will print a local URL in the terminal. Open it in your browser to use the application.
 
-## 🔐 Security
+## Current status
 
-- Keep API keys and credentials private.
-- Exclude `.env` files and secret configuration files from Git.
-- Avoid committing local databases containing personal research history.
-- Configure deployment secrets through the hosting platform.
+I'm continuing to work on the project, with a focus on improving the interface, research workflow, and handling of previous research sessions.
 
-## 🌐 Deployment
+Planned improvements include:
 
-SearchKnowtix is intended to run as a Streamlit application. Deployment requires compatible dependencies, valid API credentials, and correct application configuration.
+- Deploying a public version
+- Improving research history
+- Making source references easier to review
+- Refining error handling and report quality
 
-## 🗺️ Roadmap
+## License
 
-- [ ] Publish a live demo
-- [ ] Improve research-history management
-- [ ] Add a visual research pipeline overview
-- [ ] Include application screenshots
-- [ ] Improve source transparency and error handling
-
-## 🤝 Contributing
-
-Ideas, bug reports, and improvements are welcome. Open an issue to discuss a proposed change before submitting a pull request.
-
-## 📄 License
-
-No license has been selected yet. Licensing terms will be added once the project's distribution and reuse permissions are decided.
+No license has been added yet.
 
 ---
 
-<p align="center">
-  <strong>SearchKnowtix</strong><br>
-  <em>Research smarter. Connect the knowledge.</em>
-</p>
+*Built with Python, Streamlit, and AI agents.*
