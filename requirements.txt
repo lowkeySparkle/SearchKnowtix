@@ -1,4 +1,4 @@
-langchain-google-genai
+langchain_google_genai
 # LangChain and LCEL (Runnable pipelines)
 langchain
 langchain-core
