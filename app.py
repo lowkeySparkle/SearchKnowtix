@@ -199,7 +199,9 @@ section[data-testid="stSidebar"] button[data-testid="stBaseButton-primary"]{
 .stApp .st-key-sk-report,.stApp .st-key-sk-report *{color:#151A1F;}
 .stApp .st-key-sk-report code,.stApp .st-key-sk-report pre{background:#E9E2D0;}
 .st-key-sk-report p,.st-key-sk-report li{font-size:1.02rem;line-height:1.75;}
-.st-key-sk-report h1,.st-key-sk-report h2,.st-key-sk-report h3{font-family:'Playfair Display',Georgia,serif;margin-top:1.6rem;}
+.stApp .st-key-sk-report h1,.stApp .st-key-sk-report h2,.stApp .st-key-sk-report h3,
+.stApp .st-key-sk-report h4{font-family:'Inter',-apple-system,'Segoe UI',sans-serif !important;
+  font-weight:600 !important;letter-spacing:-.005em;margin-top:1.6rem;}
 .stApp .st-key-sk-report a,.stApp .st-key-sk-report a *{color:#2F5D00;text-decoration:underline;}
 .st-key-sk-critic{background:var(--card);border:1px solid var(--border);border-left:3px solid var(--coral);
   border-radius:10px;padding:1rem 1.3rem;}
