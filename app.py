@@ -200,8 +200,12 @@ section[data-testid="stSidebar"] button[data-testid="stBaseButton-primary"]{
 .stApp .st-key-sk-report code,.stApp .st-key-sk-report pre{background:#E9E2D0;}
 .st-key-sk-report p,.st-key-sk-report li{font-size:1.02rem;line-height:1.75;}
 .stApp .st-key-sk-report h1,.stApp .st-key-sk-report h2,.stApp .st-key-sk-report h3,
-.stApp .st-key-sk-report h4{font-family:'Inter',-apple-system,'Segoe UI',sans-serif !important;
-  font-weight:600 !important;letter-spacing:-.005em;margin-top:1.6rem;}
+.stApp .st-key-sk-report h4,.stApp .st-key-sk-report h1 *,.stApp .st-key-sk-report h2 *,
+.stApp .st-key-sk-report h3 *,.stApp .st-key-sk-report h4 *{
+  font-family:'Playfair Display',Georgia,serif !important;font-weight:500 !important;
+  letter-spacing:-.01em;}
+.stApp .st-key-sk-report h1,.stApp .st-key-sk-report h2,.stApp .st-key-sk-report h3{margin-top:1.6rem;}
+.stApp .st-key-sk-report h2{font-size:1.7rem;}
 .stApp .st-key-sk-report a,.stApp .st-key-sk-report a *{color:#2F5D00;text-decoration:underline;}
 .st-key-sk-critic{background:var(--card);border:1px solid var(--border);border-left:3px solid var(--coral);
   border-radius:10px;padding:1rem 1.3rem;}
@@ -538,7 +542,6 @@ def execute_run(topic, backend, side_ph):
     run = {"id": uuid.uuid4().hex[:8], "topic": topic, "started_at": started,
            "duration": round(time.perf_counter() - t0, 1), "status": status,
            "state": snapshot, "events": events, "error": error}
-
     st.session_state.runs.append(run)  # available immediately in this session
     try:
         save_run(run)  # persist to the database
@@ -723,6 +726,16 @@ def render_overview(run):
                 f'<div class="sk-chips">{"".join(chips)}</div></div>', unsafe_allow_html=True)
 
 
+def format_report(md):
+    """Display-only: promote short numbered/bold title lines to real headings (stored report is untouched)."""
+    md = str(md)
+    # "1. Introduction" (short, no sentence punctuation) -> "## 1. Introduction"
+    md = re.sub(r"(?m)^[ ]{0,3}(\d+\.\s+[^\n.:;!?]{2,80}?)\s*$", r"\n## \1\n", md)
+    # a line that is only **Bold Text** -> "## Bold Text"
+    md = re.sub(r"(?m)^\*\*([^*\n]{2,80})\*\*\s*$", r"\n## \1\n", md)
+    return md
+
+
 def render_run(run):
     stages = new_stages()
     for ev in run["events"]:
@@ -739,7 +752,7 @@ def render_run(run):
         report = run["state"].get("report")
         if report:
             with keyed_container("sk-report"):
-                st.markdown(report)
+                st.markdown(format_report(report))
             st.caption("The report is model-generated (or assembled from raw research); its claims have not been "
                        "independently verified. Check important points against the sources.")
         else:
@@ -934,17 +947,11 @@ def render_quick_actions(running):
                     '<div class="sk-tag">Curiosity fuels progress.</div>', unsafe_allow_html=True)
 
 
-
 def render_history():
-    st.markdown(
-        '<div class="sk-label">Research history</div>',
-        unsafe_allow_html=True,
-    )
-
+    st.markdown('<div class="sk-label">Research history</div>', unsafe_allow_html=True)
     if not st.session_state.runs:
         st.info("No research yet. Completed runs will appear here.")
         return
-
     st.caption("Your completed research runs are saved locally.")
     with keyed_container("recent"):
         recent_rows()
